@@ -1,0 +1,12 @@
+# CoinSense backend - Python packages
+# Run inside the Docker container on the Jetson (see README.md).
+# NOTE: torch 2.3.0 and torchvision 0.18.0 are the NVIDIA Jetson (aarch64, CUDA) wheels,
+# installed from the .whl files given in class - NOT from pip's normal index.
+torch==2.3.0
+torchvision==0.18.0
+ultralytics>=8.1
+numpy==1.26.4
+opencv-python==4.10.0.84
+roboflow
+pyyaml
+pytest

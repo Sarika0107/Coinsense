@@ -1,0 +1,143 @@
+# CoinSense – Smart Coin Counter (Backend)
+
+CoinSense detects U.S. coins (penny, nickel, dime, quarter) on a table with a fine-tuned
+**YOLOv8n** model running on an **NVIDIA Jetson**, counts them, adds up the total amount,
+and makes decisions from the predictions.
+
+This repository contains the **backend** (stage 2 of the project). The Streamlit frontend
+will be added in the next stage.
+
+---
+
+## Environment
+
+| Item | Value |
+|---|---|
+| Hardware | NVIDIA Jetson (Orin), USB webcam |
+| **Docker image** | **`nvcr.io/nvidia/l4t-ml:r36.2.0-py3`** |
+| Container name | `jetson_labs_dev` |
+| Python environment | conda env `yolo_gpu` (Python 3.10) |
+| Model | YOLOv8n (Ultralytics), fine-tuned on a Roboflow U.S. coins dataset |
+| Packages | see `requirements.txt` |
+
+Start the environment on the Jetson:
+```bash
+docker start jetson_labs_dev
+docker exec -it jetson_labs_dev bash
+conda activate yolo_gpu
+cd /home/jetson_labs/coinsense
+pip install roboflow pytest      # the rest is already installed in yolo_gpu
+```
+
+---
+
+## Project structure
+
+```
+coinsense/
+├── backend/
+│   ├── config.py        # coin values, roll sizes, thresholds, label aliases
+│   ├── detector.py      # loads the YOLO model -> list of Detection objects
+│   ├── decisions.py     # counting, total, decision rules, flicker smoothing
+│   └── pipeline.py      # image -> detect -> decide -> draw results
+├── scripts/
+│   ├── download_dataset.py   # get the coin dataset from Roboflow
+│   ├── train.py              # fine-tune YOLOv8n on the Jetson GPU
+│   ├── run_image.py          # run the backend on one photo
+│   ├── run_webcam.py         # run the backend live on the webcam
+│   └── evaluate.py           # mAP/precision/recall + decision accuracy
+├── tests/test_decisions.py   # tests for the decision rules
+├── models/                   # trained model goes here (coinsense_best.pt)
+├── data/                     # dataset (not uploaded to GitHub)
+├── outputs/                  # annotated result images
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## How the backend works
+
+1. **Detect** – `CoinDetector` runs the fine-tuned YOLOv8n model on a frame. Labels from
+   the dataset (e.g. `1c`, `Penny`, `quarters`) are mapped to `penny / nickel / dime / quarter`.
+   Detections below **50 %** confidence are ignored.
+2. **Count & total** – coins are counted per type and multiplied by their value
+   (1¢, 5¢, 10¢, 25¢).
+3. **Decide** – `make_decision()` applies the rules below.
+4. **Smooth** – `TotalStabilizer` only marks the total as final after it stays the same
+   for **1 second**, because detections flicker between video frames.
+5. **Draw** – boxes and labels on each coin (grey + `?` for unsure coins) and a colored
+   status bar with the total and message.
+
+### Decision rules
+
+| Rule | Condition | Output |
+|---|---|---|
+| No coins | nothing detected | grey – "No coins detected" (not $0.00) |
+| **Rule 3 – check the count** | two boxes overlap (IoU > 0.15) or a coin has 50–70 % confidence | yellow – "Spread coins out", total not final |
+| **Rule 1 – target amount** | total ≥ target | green – "You have enough!" |
+| | total < target | red – "You need $X more" |
+| **Rule 2 – roll ready** | 40 quarters / 50 dimes / 40 nickels / 50 pennies | "quarter roll ready (40/40)" |
+
+All thresholds can be changed in `backend/config.py`.
+
+---
+
+## How to run
+
+### 1. Get the dataset (Roboflow Universe)
+Pick a U.S. coins dataset on https://universe.roboflow.com (search "us coins"),
+click **Download Dataset → YOLOv8 → Show download code**, and copy the
+workspace, project, version and API key from the snippet.
+```bash
+export ROBOFLOW_API_KEY=your_key
+python scripts/download_dataset.py --workspace WORKSPACE --project PROJECT --version 1
+```
+
+### 2. Train (fine-tune YOLOv8n on the Jetson GPU)
+```bash
+python scripts/train.py --data data/coins/data.yaml --epochs 30
+```
+The best model is saved to `models/coinsense_best.pt`.
+
+### 3. Run on a photo
+```bash
+python scripts/run_image.py path/to/coins.jpg --target 2.50
+```
+Prints the decision as JSON and saves the annotated image to `outputs/`.
+
+### 4. Run live on the webcam
+```bash
+python scripts/run_webcam.py --target 2.50
+```
+Prints total, status and FPS once per second. `Ctrl+C` to stop.
+
+### 5. Evaluate
+```bash
+python scripts/evaluate.py --data data/coins/data.yaml        # mAP, precision, recall
+python scripts/evaluate.py --piles data/my_piles.csv          # exact-total accuracy
+```
+
+### 6. Test the decision rules
+```bash
+python -m pytest tests
+```
+
+---
+
+## Example output (`run_image.py`)
+```json
+{
+  "counts": {"penny": 1, "nickel": 0, "dime": 1, "quarter": 1},
+  "total": "$0.36",
+  "status": "NEED_MORE",
+  "color": "red",
+  "message": "You need $2.14 more",
+  "roll_ready": [],
+  "is_final": true
+}
+```
+
+## Next stage
+Streamlit frontend: webcam/photo input, target amount box, confidence slider,
+annotated image, count table, big total, status message and count history.
