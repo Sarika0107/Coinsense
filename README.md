@@ -27,6 +27,7 @@ docker exec -it jetson_labs_dev bash
 conda activate yolo_gpu
 cd /home/jetson_labs/coinsense
 pip install roboflow pytest      # the rest is already installed in yolo_gpu
+pip install --force-reinstall --no-deps "numpy==1.26.4" "opencv-python==4.10.0.84"   # roboflow upgrades these; restore Jetson-compatible versions
 ```
 
 ---
@@ -47,9 +48,9 @@ coinsense/
 │   ├── run_webcam.py         # run the backend live on the webcam
 │   └── evaluate.py           # mAP/precision/recall + decision accuracy
 ├── tests/test_decisions.py   # tests for the decision rules
-├── models/                   # trained model goes here (coinsense_best.pt)
+├── models/coinsense_best.pt  # trained model (fine-tuned YOLOv8n)
 ├── data/                     # dataset (not uploaded to GitHub)
-├── outputs/                  # annotated result images
+├── outputs/                  # result image, training curves, confusion matrix
 ├── requirements.txt
 └── README.md
 ```
@@ -93,6 +94,13 @@ workspace, project, version and API key from the snippet.
 export ROBOFLOW_API_KEY=your_key
 python scripts/download_dataset.py --workspace WORKSPACE --project PROJECT --version 1
 ```
+Used in this project: `--workspace snap-inc-guvc3 --project us-coins-ruajo --version 1`.
+
+If YOLO cannot find the images, fix the relative paths in `data/coins/data.yaml`:
+```bash
+sed -i 's#\.\./train/images#train/images#; s#\.\./valid/images#valid/images#; s#\.\./test/images#test/images#' data/coins/data.yaml
+echo "path: $(pwd)/data/coins" >> data/coins/data.yaml
+```
 
 ### 2. Train (fine-tune YOLOv8n on the Jetson GPU)
 ```bash
@@ -125,7 +133,54 @@ python -m pytest tests
 
 ---
 
-## Example output (`run_image.py`)
+---
+
+## Results (trained on the Jetson)
+
+**Dataset:** Roboflow Universe `snap-inc-guvc3/us-coins-ruajo`, version 1
+(130 images after augmentation, 640×640, classes: penny, nickel, dime, quarter).
+**Training:** YOLOv8n, 30 epochs, batch 8, image size 640, Jetson GPU.
+
+| Class | mAP@0.5 |
+|---|---|
+| **All** | **0.826** |
+| Penny | 0.925 |
+| Quarter | 0.948 |
+| Dime | 0.893 |
+| Nickel | 0.537 |
+
+Overall mAP@0.5:0.95 = 0.674. Inference ≈ 59 ms per image on the Jetson.
+
+### Example run
+```bash
+python scripts/run_image.py data/coins/test/images/<image>.jpg --target 1.00
+```
+```json
+{
+  "counts": {"penny": 10, "nickel": 0, "dime": 5, "quarter": 3},
+  "total": "$1.35",
+  "status": "SPREAD_OUT",
+  "color": "yellow",
+  "message": "Spread coins out - 9 unsure coin(s)",
+  "unsure_count": 9,
+  "is_final": false
+}
+```
+Several coins were detected with only 50–70 % confidence, so Rule 3 held back the
+final total and asked the user to spread the coins out.
+
+![Example result](outputs/result_example.jpg)
+
+Training curves: `outputs/training_results.png` · Confusion matrix: `outputs/confusion_matrix.png`
+
+### Observations
+- Pennies are detected most reliably (distinct copper color).
+- Nickels are the weakest class and are often confused with quarters and dimes
+  (similar silver color); the confusion matrix shows this.
+- Some coins in busy scenes are missed. The dataset is small (50 original photos),
+  so the next step is adding my own labeled webcam photos and training longer.
+
+## Example output format (`run_image.py`)
 ```json
 {
   "counts": {"penny": 1, "nickel": 0, "dime": 1, "quarter": 1},
