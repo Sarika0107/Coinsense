@@ -25,7 +25,7 @@ Start the environment on the Jetson:
 docker start jetson_labs_dev
 docker exec -it jetson_labs_dev bash
 conda activate yolo_gpu
-cd /home/jetson_labs/coinsense
+cd /home/jetson_labs/Coinsense
 pip install roboflow pytest      # the rest is already installed in yolo_gpu
 pip install --force-reinstall --no-deps "numpy==1.26.4" "opencv-python==4.10.0.84"   # roboflow upgrades these; restore Jetson-compatible versions
 ```
