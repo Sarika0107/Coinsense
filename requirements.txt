@@ -12,3 +12,4 @@ pyyaml
 pytest
 streamlit
 pandas
+protobuf==5.29.5
