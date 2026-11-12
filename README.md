@@ -1,11 +1,10 @@
-# CoinSense – Smart Coin Counter (Backend)
+# CoinSense – Smart Coin Counter
 
 CoinSense detects U.S. coins (penny, nickel, dime, quarter) on a table with a fine-tuned
 **YOLOv8n** model running on an **NVIDIA Jetson**, counts them, adds up the total amount,
 and makes decisions from the predictions.
 
-This repository contains the **backend** (stage 2 of the project). The Streamlit frontend
-will be added in the next stage.
+This repository contains the **backend** (stage 2) and the **Streamlit frontend** (stage 3).
 
 ---
 
@@ -26,7 +25,7 @@ docker start jetson_labs_dev
 docker exec -it jetson_labs_dev bash
 conda activate yolo_gpu
 cd /home/jetson_labs/Coinsense
-pip install roboflow pytest      # the rest is already installed in yolo_gpu
+pip install roboflow pytest streamlit pandas      # the rest is already installed in yolo_gpu
 pip install --force-reinstall --no-deps "numpy==1.26.4" "opencv-python==4.10.0.84"   # roboflow upgrades these; restore Jetson-compatible versions
 ```
 
@@ -36,6 +35,7 @@ pip install --force-reinstall --no-deps "numpy==1.26.4" "opencv-python==4.10.0.8
 
 ```
 coinsense/
+├── app.py               # Streamlit frontend (web page)
 ├── backend/
 │   ├── config.py        # coin values, roll sizes, thresholds, label aliases
 │   ├── detector.py      # loads the YOLO model -> list of Detection objects
@@ -133,8 +133,6 @@ python -m pytest tests
 
 ---
 
----
-
 ## Results (trained on the Jetson)
 
 **Dataset:** Roboflow Universe `snap-inc-guvc3/us-coins-ruajo`, version 1
@@ -180,6 +178,33 @@ Training curves: `outputs/training_results.png` · Confusion matrix: `outputs/co
 - Some coins in busy scenes are missed. The dataset is small (50 original photos),
   so the next step is adding my own labeled webcam photos and training longer.
 
+## Frontend (Streamlit web app)
+
+`app.py` is a web page that runs on the Jetson and is opened from the laptop's browser.
+It calls the backend (`CoinPipeline.process_frame`) for every photo.
+
+```bash
+streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+```
+Open **http://192.168.55.1:8501** (USB cable) in the laptop's browser.
+
+**Controls (sidebar)**
+- **Input:** upload a photo, take a photo with the laptop camera, or capture a frame from the Jetson USB webcam
+- **Target amount ($):** turns on Rule 1 ("You have enough!" / "You need $X more")
+- **Minimum confidence** and **"Sure" confidence** sliders: change which detections are ignored or marked unsure (Rule 3)
+- **Model file:** path to the trained weights (default `models/coinsense_best.pt`)
+
+**What the page shows**
+- the photo with a colored box and label on each coin (grey `?` = unsure)
+- the **total in big text** and the difference from the target
+- a colored **status banner** (green = enough / counted, red = need more, yellow = spread coins out, grey = no coins)
+- a **count table** (count and value per coin type), number of coins / unsure coins / overlaps
+- "roll ready" messages (Rule 2)
+- **count history**: save results and download them as CSV
+- the raw backend JSON (expandable)
+
+![Frontend](outputs/frontend_screenshot.png)
+
 ## Example output format (`run_image.py`)
 ```json
 {
@@ -194,5 +219,5 @@ Training curves: `outputs/training_results.png` · Confusion matrix: `outputs/co
 ```
 
 ## Next stage
-Streamlit frontend: webcam/photo input, target amount box, confidence slider,
-annotated image, count table, big total, status message and count history.
+Final presentation: live demo on the Jetson, evaluation results, and improving the model
+with more training images (especially nickels).
